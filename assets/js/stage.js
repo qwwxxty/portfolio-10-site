@@ -709,12 +709,14 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     const real = last ? (now - last) / 1000 : 1 / 60;
     const dt = Math.min(0.05, real);
     last = now;
+    const t0 = performance.now();
     update(dt);
+    stats.jsMs = stats.jsMs * 0.95 + (performance.now() - t0) * 0.05;
     render();
     adapt(real);
   }
 
-  const stats = { fps: 0, tier, particles: Q.count };
+  const stats = { fps: 0, tier, particles: Q.count, jsMs: 0 };
 
   function start() {
     if (running) return;

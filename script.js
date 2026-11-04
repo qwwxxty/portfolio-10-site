@@ -40,6 +40,8 @@ const smooth = (t) => t * t * (3 - 2 * t);
 const topbar = $('#topbar');
 const heroVideo = $('[data-slot="hero"]');
 const crownVideo = $('[data-slot="crown"]');
+let scrubLoop = 0;      // цикл перемотки відео сцени 4
+let crownNear = false;  // сцена 4 поруч із екраном
 const menu = $('#menu');
 const menuBtn = $('#menu-btn');
 const dock = $('#dock');
@@ -246,7 +248,7 @@ function updateHud() {
   const p = state.pin[3];
   scanPct.textContent = String(Math.round(p * 100));
   scanShade.textContent = shadeCodes[Math.min(shadeCodes.length - 1, Math.floor(p * shadeCodes.length))];
-  scrubVideo(p);
+  scrubVideo();
 }
 
 let ticking = false;
@@ -280,6 +282,7 @@ updateHud();
 function attachSources(video, base) {
   if (video.dataset.loaded) return;
   video.dataset.loaded = '1';
+  video.preload = 'auto';
   [['webm', 'video/webm'], ['mp4', 'video/mp4']].forEach(([ext, type]) => {
     const s = document.createElement('source');
     s.src = `${base}.${ext}`; s.type = type;
@@ -293,34 +296,45 @@ if (!isStatic) {
     const io = new IntersectionObserver(([en]) => { if (en.isIntersecting) { cb(); io.disconnect(); } }, { rootMargin: '100% 0px' });
     io.observe(el);
   };
-  if (VIDEO.hero.on) near($('#intro'), () => {
-    attachSources(heroVideo, VIDEO.hero.src);
-    heroVideo.classList.add('is-on');
-    heroVideo.play().catch(() => {});
-  });
-  if (VIDEO.crown.on) near($('#koronka'), () => {
-    attachSources(crownVideo, VIDEO.crown.src);
-    crownVideo.classList.add('is-on');
-    crownVideo.pause();
-    // коли відео є, частинкова коронка в 3D гасне, щоб не дублювати
-    crownVideo.addEventListener('loadeddata', () => { state.crownVideo = true; }, { once: true });
-  });
+  // Фон першої сцени вантажимо вже після інтро, щоб не важчала перша загрузка;
+  // на слабких телефонах і з увімкненою економією трафіку — не вантажимо зовсім
+  const saveData = navigator.connection?.saveData;
+  if (VIDEO.hero.on && tier !== 'lite' && !saveData) {
+    const startHero = () => near($('#intro'), () => {
+      attachSources(heroVideo, VIDEO.hero.src);
+      heroVideo.classList.add('is-on');
+      heroVideo.play().catch(() => {});
+    });
+    addEventListener('emal:intro-done', () => setTimeout(startHero, 1500), { once: true });
+  }
+  if (VIDEO.crown.on) {
+    near($('#koronka'), () => {
+      attachSources(crownVideo, VIDEO.crown.src);
+      crownVideo.classList.add('is-on');
+      crownVideo.pause();
+      // коли відео є, частинкова коронка в 3D гасне, щоб не дублювати
+      crownVideo.addEventListener('loadeddata', () => { state.crownVideo = true; scrubVideo(); }, { once: true });
+    });
+    new IntersectionObserver(([en]) => { crownNear = en.isIntersecting; scrubVideo(); }, { rootMargin: '50% 0px' })
+      .observe($('#koronka'));
+  }
 }
 
-let scrubTarget = 0;
-let scrubBusy = false;
-function scrubVideo(p) {
-  if (!crownVideo.classList.contains('is-on') || !crownVideo.duration) return;
-  scrubTarget = p * (crownVideo.duration - 0.05);
-  if (scrubBusy) return;
-  scrubBusy = true;
-  const step = () => {
-    const d = scrubTarget - crownVideo.currentTime;
-    if (Math.abs(d) < 1 / 60) { scrubBusy = false; return; }
-    crownVideo.currentTime += d * 0.35;
-    crownVideo.addEventListener('seeked', () => requestAnimationFrame(step), { once: true });
-  };
-  step();
+/* Відео за прокруткою: поки сцена 4 поруч, кожен кадр підтягуємо currentTime до прокрутки.
+   Нову позицію ставимо, лише коли попередня вже відмотана (video.seeking === false). */
+function scrubTick() {
+  scrubLoop = 0;
+  if (!crownNear) return;
+  const v = crownVideo;
+  if (v.duration && !v.seeking) {
+    const target = state.pin[3] * (v.duration - 0.05);
+    const d = target - v.currentTime;
+    if (Math.abs(d) > 1 / 50) v.currentTime = v.currentTime + d * 0.5;
+  }
+  scrubLoop = requestAnimationFrame(scrubTick);
+}
+function scrubVideo() {
+  if (crownNear && !scrubLoop && crownVideo.classList.contains('is-on')) scrubLoop = requestAnimationFrame(scrubTick);
 }
 
 /* =========================================================
@@ -400,6 +414,7 @@ function setProgress(p, label) {
 function closeLoader({ skipped = false } = {}) {
   if (loaderClosed) return;
   loaderClosed = true;
+  dispatchEvent(new Event('emal:intro-done'));
   loader.classList.add('is-done');
   root.classList.remove('is-loading');
   setTimeout(() => { loader.hidden = true; }, 800);
