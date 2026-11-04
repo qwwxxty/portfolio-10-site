@@ -247,15 +247,17 @@ strong, b { font-weight: 800; }
 .meter { display: none; }
 @media (min-width: 1024px) {
   .meter {
-    position: fixed; left: var(--gutter); bottom: 28px; z-index: 40;
+    position: fixed; right: 12px; top: 50%; z-index: 40;
+    transform: translateY(-50%);
+    writing-mode: vertical-rl;
     display: flex; align-items: center; gap: .7rem;
     font-size: var(--fs-xs); font-weight: 600; letter-spacing: .08em; color: var(--muted);
     font-variant-numeric: tabular-nums; pointer-events: none;
     transition: opacity .4s;
   }
   .meter__num { color: var(--accent-2); }
-  .meter__track { width: 72px; height: 1px; background: var(--line-strong); position: relative; overflow: hidden; }
-  .meter__track i { position: absolute; inset: 0; background: var(--accent-2); transform-origin: left; transform: scaleX(0); }
+  .meter__track { width: 1px; height: 72px; background: var(--line-strong); position: relative; overflow: hidden; }
+  .meter__track i { position: absolute; inset: 0; background: var(--accent-2); transform-origin: top; transform: scaleY(0); }
   .meter__name { margin-left: .4rem; text-transform: uppercase; }
   .is-static .meter, .is-end .meter { opacity: 0; }
 }

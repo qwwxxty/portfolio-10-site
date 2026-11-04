@@ -189,7 +189,9 @@ const state = {
   f: 0,            // сцена (плаваюча)
   local: new Float32Array(scenes.length), // прогрес сцени від входу до виходу
   pin: new Float32Array(scenes.length),   // прогрес «приклеєної» частини сцени
+  arrive: new Float32Array(scenes.length), // прибуття: від появи верху сцени до +1.4 екрана
   pointer: { x: 0, y: 0 },
+  crownVideo: false,
   desktop: desktopMQ.matches,
   vw, vh,
 };
@@ -221,6 +223,7 @@ function computeScroll() {
     const m = metrics[i];
     state.local[i] = clamp((y + vh - m.top) / (m.h + vh));
     state.pin[i] = clamp((y - m.top) / Math.max(1, m.h - vh));
+    state.arrive[i] = clamp((y - m.top + 0.9 * vh) / (1.4 * vh));
   }
 }
 
@@ -235,7 +238,7 @@ function updateHud() {
     meterNum.textContent = String(idx + 1).padStart(2, '0');
     meterName.textContent = scenes[idx]?.dataset.name || '';
   }
-  meterFill.style.transform = `scaleX(${(state.f / (scenes.length - 1)).toFixed(4)})`;
+  meterFill.style.transform = `scaleY(${(state.f / (scenes.length - 1)).toFixed(4)})`;
   root.classList.toggle('is-end', scrollY + vh > document.body.scrollHeight - 40);
   topbar.classList.toggle('is-solid', scrollY > 40);
 
@@ -299,6 +302,8 @@ if (!isStatic) {
     attachSources(crownVideo, VIDEO.crown.src);
     crownVideo.classList.add('is-on');
     crownVideo.pause();
+    // коли відео є, частинкова коронка в 3D гасне, щоб не дублювати
+    crownVideo.addEventListener('loadeddata', () => { state.crownVideo = true; }, { once: true });
   });
 }
 
@@ -423,6 +428,7 @@ async function bootStage() {
       canvas: $('#stage'),
       tier,
       state,
+      adaptive: !params.has('noadapt'), // ?noadapt — для перевірки якості без автоспрощення
       videos: {
         cardA: VIDEO.cardA.on ? VIDEO.cardA.src : null,
         cardB: VIDEO.cardB.on ? VIDEO.cardB.src : null,
