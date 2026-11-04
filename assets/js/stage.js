@@ -33,7 +33,7 @@ const STATIONS = [
   { R: 3.1, dir: [0.0, 0.0, 1], look: [0, 0.1, 0],
     desk: { cx: 0.73, cy: 0.50, bw: 0.46, bh: 0.72 }, mob: { cx: 0.5, cy: 0.28, bw: 0.95, bh: 0.34 } },
   { R: 2.45, dir: [0.0, 0.95, 0.72], look: [0, 0, 0.15],
-    desk: { cx: 0.50, cy: 0.24, bw: 0.48, bh: 0.34 }, mob: { cx: 0.5, cy: 0.27, bw: 0.92, bh: 0.30 } },
+    desk: { cx: 0.79, cy: 0.27, bw: 0.32, bh: 0.34 }, mob: { cx: 0.5, cy: 0.27, bw: 0.92, bh: 0.30 } },
 ];
 
 const TIERS = {
@@ -239,10 +239,17 @@ void main(){
 
 const CARD_FRAG = /* glsl */`
 uniform sampler2D uMap; uniform float uHasMap, uTime, uOpacity, uSeed;
-uniform vec3 uTint, uPearl, uMint, uBg;
+uniform vec3 uTint, uPearl, uMint, uRose, uBg;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 ${NOISE}
 float sdRound(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+// зоряний пил, який видно крізь товсте скло (зсувається з кутом огляду — заломлення)
+float star(vec2 p){
+  vec2 i = floor(p); vec2 f = fract(p) - 0.5;
+  float h = fract(sin(dot(i, vec2(41.3, 289.1)))*43758.5453);
+  vec2 o = vec2(fract(h*13.1), fract(h*7.7)) - 0.5;
+  return smoothstep(0.09, 0.0, length(f - o*0.6)) * step(0.78, h);
+}
 vec3 caustics(vec2 uv){
   vec2 p = uv*vec2(3.0, 3.75);
   float t = uTime*0.25 + uSeed*10.0;
@@ -262,10 +269,17 @@ void main(){
   vec2 bend = vec2(snoise(vec3(vUv*2.5, uTime*0.12 + uSeed)), snoise(vec3(vUv*2.5 + 9.0, uTime*0.12)))*0.018;
   vec2 cuv = vUv + bend + (vUv - 0.5)*0.04*smoothstep(-0.25, 0.0, d);
   vec3 content = uHasMap > 0.5 ? texture2D(uMap, clamp(cuv*0.94 + 0.03, 0.0, 1.0)).rgb : caustics(cuv);
+  // заломлення: зірки за склом зсуваються залежно від кута огляду
+  vec2 refr = normalize(vV).xy*0.9 + bend*6.0;
+  vec2 suv = vUv*vec2(7.0, 8.75) + refr*3.0 + uSeed*17.0;
+  float stars = star(suv) + 0.55*star(suv*1.8 + 3.1);
+  content += uPearl*stars*(uHasMap > 0.5 ? 0.15 : 0.7);
   float rim = smoothstep(-0.07, 0.0, d);
   float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
   float sweep = smoothstep(0.09, 0.0, abs((vUv.x*0.8 + vUv.y)*0.62 - fract(uTime*0.06 + uSeed)*1.8 + 0.2));
-  vec3 col = content*0.9 + uPearl*(rim*0.38 + sweep*0.14) + uMint*fres*0.3;
+  // дисперсія на краю: м'ята з одного боку, корал з іншого
+  vec3 disp = (uMint*smoothstep(0.0, 0.8, p.x) + uRose*smoothstep(0.0, 0.8, -p.x)) * smoothstep(-0.2, 0.0, d) * 0.35;
+  vec3 col = content*0.9 + uPearl*(rim*0.34 + sweep*0.14) + uMint*fres*0.25 + disp;
   // скло: прозора середина, щільніший край
   float alpha = uOpacity * (uHasMap > 0.5 ? mix(0.92, 1.0, rim) : mix(0.62, 0.95, rim));
   gl_FragColor = vec4(col, alpha);
@@ -440,7 +454,7 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
   cardDefs.forEach((def, i) => {
     const u = {
       uMap: { value: null }, uHasMap: { value: 0 }, uTime: { value: 0 }, uOpacity: { value: 0 }, uSeed: { value: i * 0.37 },
-      uTint: { value: def.tint }, uPearl: { value: C.text }, uMint: { value: C.mint }, uBg: { value: C.bg },
+      uTint: { value: def.tint }, uPearl: { value: C.text }, uMint: { value: C.mint }, uRose: { value: C.rose }, uBg: { value: C.bg },
     };
     const m = new THREE.Mesh(cardGeo, new THREE.ShaderMaterial({
       vertexShader: CARD_VERT, fragmentShader: CARD_FRAG, uniforms: u, transparent: true, depthWrite: false, side: THREE.DoubleSide,

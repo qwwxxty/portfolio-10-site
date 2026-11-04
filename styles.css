@@ -350,6 +350,13 @@ main:focus { outline: none; }
   min-height: 100vh; min-height: 100svh;
 }
 .intro { display: grid; gap: var(--s3); }
+/* На телефоні 3D стоїть за текстом — м'яко притемнюємо низ екрана, щоб текст лишався контрастним */
+@media (max-width: 1023px) {
+  .scene--intro::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, transparent 28%, rgb(5 22 29 / .55) 46%, rgb(5 22 29 / .82) 100%);
+  }
+}
 .intro__title { display: grid; gap: .35rem; }
 .intro__name {
   display: block;
@@ -680,7 +687,7 @@ html:not(.is-ready) .crown__slot {
 @media (min-width: 1024px) {
   .scene--book { --scene-gap: 38vh; }
   .book { grid-template-columns: 1.1fr .9fr; gap: var(--s4); align-items: start; }
-  .book__head { grid-column: 1 / -1; max-width: 860px; }
+  .book__head { grid-column: 1 / -1; max-width: 760px; padding: var(--s5); }
   .book-form { padding: var(--s5); }
   .contacts { padding: var(--s5); }
 }
