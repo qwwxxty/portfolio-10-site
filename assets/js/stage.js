@@ -23,12 +23,12 @@ const HEX = {
    desk/mob — де на екрані центр об'єкта (частки ширини/висоти) і розмір рамки. */
 const STATIONS = [
   { R: 1.95, dir: [0.0, 0.10, 1], look: [0, 0, 0],
-    desk: { cx: 0.71, cy: 0.52, bw: 0.40, bh: 0.62 }, mob: { cx: 0.5, cy: 0.25, bw: 0.62, bh: 0.30 } },
+    desk: { cx: 0.71, cy: 0.52, bw: 0.40, bh: 0.62 }, mob: { cx: 0.5, cy: 0.225, bw: 0.58, bh: 0.26 } },
   { R: 3.7, dir: [0.0, 0.48, 1], look: [0, -0.7, 0],
     desk: { cx: 0.72, cy: 0.52, bw: 0.56, bh: 0.80 }, mob: { cx: 0.5, cy: 0.29, bw: 1.05, bh: 0.40 } },
   { R: 2.45, dir: [0.0, 0.05, 1], look: [0, 0.15, 0],
     desk: { cx: 0.72, cy: 0.42, bw: 0.40, bh: 0.60 }, mob: { cx: 0.5, cy: 0.28, bw: 0.80, bh: 0.32 } },
-  { R: 1.55, dir: [0.0, 0.42, 1], look: [0, 0, 0],
+  { R: 1.6, dir: [0.0, 0.16, 1], look: [0, 0, 0],
     desk: { cx: 0.70, cy: 0.52, bw: 0.36, bh: 0.56 }, mob: { cx: 0.5, cy: 0.33, bw: 0.62, bh: 0.30 } },
   { R: 3.1, dir: [0.0, 0.0, 1], look: [0, 0.1, 0],
     desk: { cx: 0.73, cy: 0.50, bw: 0.46, bh: 0.72 }, mob: { cx: 0.5, cy: 0.28, bw: 0.95, bh: 0.34 } },
@@ -71,7 +71,7 @@ float snoise(vec3 v){
 
 const PARTICLE_VERT = /* glsl */`
 uniform float uTime, uFrom, uTo, uT, uSpacing, uPR, uSize, uViewH;
-uniform float uFanSpread, uArchLight, uWaveAmp, uCrownFade, uIntroSpread;
+uniform float uFanSpread, uArchLight, uWaveAmp, uCrownFade, uIntroSpread, uScanY;
 uniform mat3 uRotTooth, uRotCrown;
 uniform vec3 uPointer; uniform float uPointerK;
 uniform vec3 uMint, uRose, uPearl, uIvory;
@@ -130,9 +130,15 @@ void main(){
   float lit = smoothstep(aArch.w - 0.9, aArch.w + 0.1, uArchLight);
   col = mix(col, uPearl, wArch*lit*0.55*(1.0 - rose));
   col = mix(col, mix(uPearl, uIvory, 0.7), wK(2.0, e)*0.6*(1.0 - rose));
+  // сцена 4: смуга сканера йде знизу вгору; нижче неї — «відскановано»
+  float wCrown = wK(3.0, e);
+  float band = exp(-pow((aCrown.y - uScanY)/0.07, 2.0));
+  float scanned = step(aCrown.y, uScanY);
+  col = mix(col, mix(uMint, uPearl, scanned), wCrown*0.75*(1.0 - rose));
+  col = mix(col, uRose, wCrown*band*0.85);
   float alpha = 0.6 + 0.4*sin(uTime*(0.7 + aRand.w*1.7) + aRand.w*40.0);
-  alpha *= mix(1.0, 0.42 + 0.9*lit, wArch);
-  alpha *= mix(1.0, 1.0 - 0.85*uCrownFade, wK(3.0, e));
+  alpha *= mix(1.0, 0.4 + 0.65*lit, wArch);
+  alpha *= mix(1.0, (0.4 + 0.35*scanned + band*1.3)*(1.0 - 0.85*uCrownFade), wCrown);
   alpha *= 1.0 + fly*0.5;
   vColor = col; vAlpha = alpha;
 
@@ -259,7 +265,7 @@ void main(){
   float rim = smoothstep(-0.07, 0.0, d);
   float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
   float sweep = smoothstep(0.09, 0.0, abs((vUv.x*0.8 + vUv.y)*0.62 - fract(uTime*0.06 + uSeed)*1.8 + 0.2));
-  vec3 col = content*0.9 + uPearl*(rim*0.75 + sweep*0.16) + uMint*fres*0.35;
+  vec3 col = content*0.9 + uPearl*(rim*0.38 + sweep*0.14) + uMint*fres*0.3;
   // скло: прозора середина, щільніший край
   float alpha = uOpacity * (uHasMap > 0.5 ? mix(0.92, 1.0, rim) : mix(0.62, 0.95, rim));
   gl_FragColor = vec4(col, alpha);
@@ -389,7 +395,7 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     uTime: { value: 0 }, uFrom: { value: -1 }, uTo: { value: 0 }, uT: { value: 0 }, uSpacing: { value: SPACING },
     uPR: { value: dpr }, uSize: { value: Q.size }, uViewH: { value: 900 },
     uFanSpread: { value: 0.05 }, uArchLight: { value: -1 }, uWaveAmp: { value: 1 }, uCrownFade: { value: 0 },
-    uIntroSpread: { value: 9 },
+    uIntroSpread: { value: 9 }, uScanY: { value: -1.1 },
     uRotTooth: { value: new THREE.Matrix3() }, uRotCrown: { value: new THREE.Matrix3() },
     uPointer: { value: new THREE.Vector3(0, 999, 0) }, uPointerK: { value: 0 },
     uMint: { value: C.mint }, uRose: { value: C.rose }, uPearl: { value: C.text }, uIvory: { value: C.ivory },
@@ -587,13 +593,14 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     pU.uArchLight.value = lerp(-1, 16.5, clamp(A[5]));
     pU.uWaveAmp.value = 0.85 + 0.25 * Math.sin(time * 0.6);
     pU.uCrownFade.value = state.crownVideo ? 1 : 0;
+    pU.uScanY.value = lerp(-1.1, 1.1, clamp(P[3] * 1.1));
 
     // обертання зуба й коронки (+ легкий нахил за курсором)
     ptr.x += (state.pointer.x - ptr.x) * Math.min(1, dt * 3);
     ptr.y += (state.pointer.y - ptr.y) * Math.min(1, dt * 3);
     rotE.set(-0.12 - ptr.y * 0.16, time * 0.22 + ptr.x * 0.4, 0.06);
     pU.uRotTooth.value.setFromMatrix4(m4.makeRotationFromEuler(rotE));
-    rotE.set(0.38 - ptr.y * 0.1, P[3] * Math.PI * 2.2 + time * 0.06, 0);
+    rotE.set(0.22 - ptr.y * 0.1, P[3] * Math.PI * 2.2 + time * 0.06, 0);
     pU.uRotCrown.value.setFromMatrix4(m4.makeRotationFromEuler(rotE));
 
     // камера: вписуємо об'єкт у рамку композиції
@@ -633,7 +640,7 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     const segA = segs[i0], segB = segs[i1];
     let head = lerp(segA[1], segB[1], smooth(tt));
     let tail = lerp(segA[1] - segA[0], segB[1] - segB[0], smooth(tt)) + 0.035;
-    if (intro < 1) { head = lerp(segs[0][0], segs[0][1], intro); tail = Math.max(0.01, head - segs[0][0] + 0.02); }
+    if (intro < 1) { head = lerp(segs[0][0], head, intro); tail = Math.min(tail, Math.max(0.01, head - segs[0][0] + 0.02)); }
     [lineCore, lineHalo].forEach((m) => {
       m.material.uniforms.uHead.value = head;
       m.material.uniforms.uTail.value = tail;
@@ -685,11 +692,12 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
   function frame(now) {
     if (paused) { running = false; return; }
     raf = requestAnimationFrame(frame);
-    const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
+    const real = last ? (now - last) / 1000 : 1 / 60;
+    const dt = Math.min(0.05, real);
     last = now;
     update(dt);
     render();
-    adapt(dt);
+    adapt(real);
   }
 
   const stats = { fps: 0, tier, particles: Q.count };
@@ -718,6 +726,9 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     start,
     setPaused,
     skipIntro() { introT = 1; sf = state.f; },
-    stats: () => ({ ...stats, dpr, bloom: Q.bloom, drawn: geo.drawRange.count === Infinity ? Q.count : geo.drawRange.count, sf: +sf.toFixed(3) }),
+    stats: () => ({
+      ...stats, dpr, bloom: Q.bloom, drawn: geo.drawRange.count === Infinity ? Q.count : geo.drawRange.count, sf: +sf.toFixed(3),
+      line: [lineCore.material.uniforms.uHead.value, lineCore.material.uniforms.uTail.value].map((v) => +v.toFixed(4)), segs,
+    }),
   };
 }
