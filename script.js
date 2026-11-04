@@ -430,6 +430,23 @@ function closeLoader({ skipped = false } = {}) {
 
 $('#skip-intro').addEventListener('click', () => closeLoader({ skipped: true }));
 
+/* Відкат на статичну версію з поясненням причини (видно в ?diag і в консолі) */
+function fallbackToStatic(reason) {
+  console.warn('Емаль: 3D-сцену вимкнено, показуємо статичну версію. Причина:', reason);
+  root.classList.remove('is-loading', 'is-ready');
+  root.classList.add('is-static');
+  root.dataset.why = 'gpu';
+  root.dataset.whyText = String(reason);
+  window.__stage?.setPaused?.(true);
+  // без анімацій: увесь текст одразу на місці
+  if (gsap) {
+    window.ScrollTrigger?.getAll?.().forEach((t) => t.kill());
+    gsap.set('[data-reveal]', { opacity: 1, y: 0 });
+  }
+  closeLoader();
+  updateDiag();
+}
+
 async function bootStage() {
   setProgress(0.04, 'Вмикаємо світло в кабінеті');
   // запасний план: якщо щось завантажується надто довго — відкриваємо сайт з постерами
@@ -449,6 +466,7 @@ async function bootStage() {
         cardB: VIDEO.cardB.on ? VIDEO.cardB.src : null,
       },
       onProgress: (p, label) => setProgress(0.45 + p * 0.55, label),
+      onFail: (reason) => fallbackToStatic(reason),
     });
     window.__stage = stage;
     root.classList.add('is-ready');
@@ -458,13 +476,79 @@ async function bootStage() {
     if (!loaderClosed) setTimeout(() => closeLoader(), 350);
     else stage.skipIntro();
   } catch (err) {
-    // WebGL не запустився — показуємо статичні постери
-    console.warn('3D-сцену вимкнено, показуємо статичну версію:', err);
+    // WebGL не запустився, бібліотека не завантажилася або шейдер не скомпілювався — показуємо постери
     clearTimeout(failSafe);
-    root.classList.remove('is-loading', 'is-ready');
-    root.classList.add('is-static');
-    closeLoader();
+    fallbackToStatic(err?.message || String(err));
   }
+}
+
+/* =========================================================
+   9. «Менше руху» в системі (на Windows це вимкнений перемикач
+   «Ефекти анімації»): за замовчуванням поважаємо — показуємо
+   статичну версію, але даємо кнопку увімкнути 3D свідомо.
+   ========================================================= */
+const motionNote = $('#motion-note');
+if (root.dataset.why === 'reduced-motion' && motionNote) {
+  motionNote.hidden = false;
+  $('#motion-on').addEventListener('click', () => {
+    try { localStorage.setItem('emal-motion', 'on'); } catch { /* приватний режим */ }
+    location.replace(location.pathname + '?motion' + location.hash);
+  });
+}
+const motionOff = $('#motion-off');
+if (motionOff) {
+  motionOff.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.removeItem('emal-motion'); } catch { /* ігноруємо */ }
+    location.replace(location.pathname + '?static' + location.hash);
+  });
+}
+
+/* =========================================================
+   10. Діагностика: додай ?diag до адреси — у кутку з'явиться
+   панель: режим, причина, відеокарта (рушій ANGLE), рівень, FPS.
+   ========================================================= */
+const WHY = {
+  'reduced-motion': 'у системі ввімкнено «менше руху» (Windows: Параметри → Спеціальні можливості → Візуальні ефекти → Ефекти анімації)',
+  'no-webgl2': 'браузер не дав WebGL2 (вимкнене апаратне прискорення або відеокарта в чорному списку)',
+  param: 'відкрито з ?static',
+};
+let diagEl = null;
+function probeGpu() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return 'WebGL недоступний';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return name;
+  } catch { return 'не вдалося визначити'; }
+}
+function updateDiag() {
+  if (!diagEl) return;
+  const st = window.__stage?.stats?.();
+  const mode = root.classList.contains('is-static') ? 'статичний' : root.classList.contains('is-ready') ? '3D' : 'завантаження';
+  const why = root.dataset.whyText || WHY[root.dataset.why] || '—';
+  const lines = [
+    `Режим: ${mode}`,
+    `Причина: ${mode === '3D' ? '—' : why}`,
+    `Відеокарта: ${st?.gpu || diagEl.dataset.gpu}`,
+    `Менше руху в системі: ${reduceMotion ? 'так' : 'ні'}`,
+    st ? `Рівень: ${st.tier} · FPS ${st.fps} · DPR ${st.dpr} · частинок ${st.drawn} · bloom ${st.bloom ? 'так' : 'ні'}` : '',
+    st && st.black !== null ? `Чорних пікселів: ${Math.round(st.black * 100)}%` : '',
+  ].filter(Boolean);
+  diagEl.textContent = lines.join('\n');
+}
+if (params.has('diag')) {
+  diagEl = document.createElement('pre');
+  diagEl.className = 'diag';
+  diagEl.setAttribute('aria-live', 'polite');
+  diagEl.dataset.gpu = probeGpu();
+  document.body.appendChild(diagEl);
+  updateDiag();
+  setInterval(updateDiag, 1000);
+  console.info('Емаль · діагностика:', diagEl.dataset.gpu, '| менше руху:', reduceMotion, '| режим:', root.className);
 }
 
 if (isStatic) {

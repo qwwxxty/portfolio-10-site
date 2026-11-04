@@ -373,6 +373,27 @@ main:focus { outline: none; }
 .intro__note strong { color: var(--text); }
 .intro__note a { color: var(--accent-2); text-underline-offset: 3px; }
 .scroll-cue { display: none; }
+.motion-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem;
+  max-width: 34rem; padding: .7rem .9rem; margin-top: var(--s1);
+  border-radius: var(--radius-sm); border: 1px dashed rgb(82 198 159 / .5); background: rgb(5 22 29 / .6);
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.motion-note[hidden] { display: none; }
+.motion-note__btn {
+  min-height: 40px; padding: 0 1rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--accent-2); background: transparent; color: var(--accent-2);
+  font-size: var(--fs-sm); font-weight: 700;
+}
+.motion-note__btn:hover { background: rgb(82 198 159 / .12); }
+/* Панель діагностики (?diag) */
+.diag {
+  position: fixed; left: 8px; bottom: calc(var(--dock-h) + 8px); z-index: 300;
+  max-width: min(92vw, 560px); margin: 0; padding: .6rem .75rem;
+  border-radius: 10px; border: 1px solid var(--line-strong); background: rgb(5 22 29 / .94);
+  font: 400 var(--fs-xs)/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none;
+}
 /* на телефоні «Подзвонити» вже є в нижній панелі */
 @media (max-width: 767px) { .cta-row .btn--ghost { display: none; } }
 

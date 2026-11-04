@@ -80,10 +80,14 @@ attribute vec4 aFan; attribute vec4 aArch; attribute vec4 aRand;
 varying vec3 vColor; varying float vAlpha;
 ${NOISE}
 vec3 st(float k){ return vec3(0.0, -k*uSpacing, 0.0); }
+// ПОРТАТИВНІСТЬ (Windows): Chrome/Edge на Windows перекладають GLSL у Direct3D (HLSL).
+// Там pow(x, y) з x < 0 дає NaN, а перевернутий smoothstep(1, 0, x) не визначений,
+// тому квадрати пишемо як x*x, а «зворотні» плавні переходи — як 1.0 - smoothstep(0, 1, x).
+// Важкий шум (snoise) лишаємо лише там, де без нього ніяк: Direct3D компілює його довго.
 vec3 waveAt(vec2 g){
   float x = g.x*6.4, z = g.y*3.4;
   float y = sin(x*0.85 + uTime*0.5)*0.30 + sin(z*1.25 - uTime*0.38 + x*0.35)*0.22;
-  y += snoise(vec3(x*0.22, z*0.22, uTime*0.07))*0.38;
+  y += sin(x*0.37 + z*0.61 + uTime*0.21)*0.20 + sin(x*0.53 - z*0.29 - uTime*0.17)*0.18;
   return vec3(x, y*uWaveAmp - 0.7, z);
 }
 vec3 fanAt(vec4 f){
@@ -94,8 +98,7 @@ vec3 fanAt(vec4 f){
 }
 vec3 dustAt(){
   vec3 p = position * vec3(5.8, 3.8, 3.2);
-  vec3 q = p*0.18 + vec3(0.0, 0.0, uTime*0.04);
-  return p + vec3(snoise(q), snoise(q + 11.3), snoise(q + 23.7))*0.55;
+  return p + vec3(sin(p.y*0.6 + p.z*0.3 + uTime*0.30), sin(p.z*0.5 + p.x*0.4 + uTime*0.25), sin(p.x*0.4 - p.y*0.3 - uTime*0.20))*0.45;
 }
 vec3 target(float k){
   if (k < -0.5) return position * uIntroSpread + st(0.0);
@@ -118,8 +121,7 @@ void main(){
   float fly = sin(3.14159*e);
   vec3 q = p*0.16 + vec3(aRand.w*7.0, 0.0, uTime*0.05);
   p += vec3(snoise(q), snoise(q + 19.1), snoise(q + 37.7)) * fly * 1.9;
-  vec3 q2 = p*0.9 + uTime*0.12;
-  p += vec3(snoise(q2), snoise(q2 + 5.2), 0.0) * 0.018;
+  p += sin(p.yzx*3.1 + uTime*(0.8 + aRand.w) + aRand.w*20.0) * vec3(0.016, 0.016, 0.0);
   vec3 d = p - uPointer; float dl = length(d) + 1e-4;
   p += d/dl * max(0.0, 1.0 - dl/1.15) * uPointerK;
 
@@ -132,7 +134,8 @@ void main(){
   col = mix(col, mix(uPearl, uIvory, 0.7), wK(2.0, e)*0.6*(1.0 - rose));
   // сцена 4: смуга сканера йде знизу вгору; нижче неї — «відскановано»
   float wCrown = wK(3.0, e);
-  float band = exp(-pow((aCrown.y - uScanY)/0.07, 2.0));
+  float sb = (aCrown.y - uScanY)/0.07;
+  float band = exp(-sb*sb);
   float scanned = step(aCrown.y, uScanY);
   col = mix(col, mix(uMint, uPearl, scanned), wCrown*0.75*(1.0 - rose));
   col = mix(col, uRose, wCrown*band*0.85);
@@ -145,7 +148,8 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float size = uSize * (0.45 + aRand.y*aRand.y*1.7) * (1.0 + fly*0.5);
-  gl_PointSize = max(1.0, size * uPR * uViewH / -mv.z);
+  // частинки біля самої камери не роздуваються на весь екран
+  gl_PointSize = clamp(size * uPR * uViewH / max(-mv.z, 0.05), 1.0, 48.0*uPR);
 }`;
 
 const PARTICLE_FRAG = /* glsl */`
@@ -153,8 +157,8 @@ varying vec3 vColor; varying float vAlpha;
 void main(){
   float d = length(gl_PointCoord - 0.5);
   if (d > 0.5) discard;
-  float a = smoothstep(0.5, 0.0, d); a *= a;
-  float core = smoothstep(0.16, 0.0, d);
+  float a = 1.0 - smoothstep(0.0, 0.5, d); a *= a;
+  float core = 1.0 - smoothstep(0.0, 0.16, d);
   gl_FragColor = vec4(vColor*(1.0 + core*0.8), a*vAlpha);
   #include <colorspace_fragment>
 }`;
@@ -192,7 +196,7 @@ void main(){
   col += uMint * gm * (0.010 + 0.024*n) * uMintAmt;
   col += uRose * gr * (0.008 + 0.022*n2) * uRoseAmt;
   col += uMint * 0.004 * smoothstep(0.55, 0.85, n2);
-  float vig = smoothstep(1.25, 0.2, length(p*vec2(0.8, 1.0)));
+  float vig = 1.0 - smoothstep(0.2, 1.25, length(p*vec2(0.8, 1.0)));
   col *= mix(0.62, 1.0, vig);
   col += (hash(gl_FragCoord.xy + fract(uTime)*91.0) - 0.5) / 255.0;
   gl_FragColor = vec4(max(col, 0.0), 1.0);
@@ -216,13 +220,16 @@ void main(){
   if (x > uHead) discard;
   float tail = smoothstep(uHead - uTail, uHead - uTail*0.55, x);
   if (tail <= 0.001) discard;
-  float head = exp(-pow((uHead - x)/0.004, 2.0));
+  float hd = (uHead - x)/0.004;
+  float head = exp(-hd*hd);
   float run = uHead - uTail*0.75*fract(uTime*0.09);
-  float spark = exp(-pow((x - run)/0.003, 2.0));
+  float sp = (x - run)/0.003;
+  float spark = exp(-sp*sp);
   vec3 col = mix(uMint, uRose, smoothstep(uHead - uTail*0.45, uHead, x));
   col = mix(col, uPearl, head*0.7);
-  float facing = abs(dot(normalize(vN), normalize(vV)));
-  float a = uHalo > 0.5 ? pow(facing, 2.5)*0.11 : 0.9;
+  float facing = clamp(abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
+  float f2 = facing*facing;
+  float a = uHalo > 0.5 ? f2*sqrt(facing)*0.11 : 0.9;
   float inten = uGain * (0.65 + head*3.0 + spark*1.4);
   gl_FragColor = vec4(col*inten, a*tail);
   #include <colorspace_fragment>
@@ -248,7 +255,7 @@ float star(vec2 p){
   vec2 i = floor(p); vec2 f = fract(p) - 0.5;
   float h = fract(sin(dot(i, vec2(41.3, 289.1)))*43758.5453);
   vec2 o = vec2(fract(h*13.1), fract(h*7.7)) - 0.5;
-  return smoothstep(0.09, 0.0, length(f - o*0.6)) * step(0.78, h);
+  return (1.0 - smoothstep(0.0, 0.09, length(f - o*0.6))) * step(0.78, h);
 }
 vec3 caustics(vec2 uv){
   vec2 p = uv*vec2(3.0, 3.75);
@@ -257,9 +264,11 @@ vec3 caustics(vec2 uv){
   for (int i = 0; i < 3; i++){
     float fi = float(i);
     vec2 q = p*(1.0 + fi*0.6) + vec2(snoise(vec3(p*0.7, t + fi)), snoise(vec3(p*0.7 + 4.0, t - fi)))*0.9;
-    c += pow(abs(sin(q.x*2.1 + t) * sin(q.y*1.7 - t*0.8)), 6.0) / (1.0 + fi);
+    float s = abs(sin(q.x*2.1 + t) * sin(q.y*1.7 - t*0.8));
+    s = s*s*s;
+    c += s*s / (1.0 + fi);
   }
-  float body = smoothstep(0.85, 0.1, length(uv - vec2(0.5, 0.42)));
+  float body = 1.0 - smoothstep(0.1, 0.85, length(uv - vec2(0.5, 0.42)));
   return uBg*0.9 + uTint*(c*0.32 + body*0.05) + uPearl*c*c*0.10;
 }
 void main(){
@@ -275,8 +284,9 @@ void main(){
   float stars = star(suv) + 0.55*star(suv*1.8 + 3.1);
   content += uPearl*stars*(uHasMap > 0.5 ? 0.15 : 0.7);
   float rim = smoothstep(-0.07, 0.0, d);
-  float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
-  float sweep = smoothstep(0.09, 0.0, abs((vUv.x*0.8 + vUv.y)*0.62 - fract(uTime*0.06 + uSeed)*1.8 + 0.2));
+  float fr = clamp(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
+  float fres = fr*fr;
+  float sweep = 1.0 - smoothstep(0.0, 0.09, abs((vUv.x*0.8 + vUv.y)*0.62 - fract(uTime*0.06 + uSeed)*1.8 + 0.2));
   // дисперсія на краю: м'ята з одного боку, корал з іншого
   vec3 disp = (uMint*smoothstep(0.0, 0.8, p.x) + uRose*smoothstep(0.0, 0.8, -p.x)) * smoothstep(-0.2, 0.0, d) * 0.35;
   vec3 col = content*0.9 + uPearl*(rim*0.34 + sweep*0.14) + uMint*fres*0.25 + disp;
@@ -363,13 +373,25 @@ function buildLinePath() {
 }
 
 /* ---------- Сцена ---------- */
-export async function createStage({ canvas, tier = 'desktop', state, videos = {}, adaptive = true, onProgress = () => {} }) {
+export async function createStage({ canvas, tier = 'desktop', state, videos = {}, adaptive = true, onProgress = () => {}, onFail = () => {} }) {
   const Q = { ...TIERS[tier] || TIERS.desktop };
 
   const renderer = new THREE.WebGLRenderer({
     canvas, antialias: false, alpha: false, powerPreference: 'high-performance', stencil: false, depth: true,
   });
   renderer.setClearColor(HEX.bg, 1);
+
+  // Яка відеокарта й який рушій (на Windows зазвичай «ANGLE … Direct3D11») — для ?diag
+  const glc = renderer.getContext();
+  const dbgInfo = glc.getExtension('WEBGL_debug_renderer_info');
+  const gpu = String(dbgInfo ? glc.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) : glc.getParameter(glc.RENDERER));
+
+  // Якщо шейдер не скомпілювався (буває на окремих драйверах) — не показуємо порожнє полотно, а відкочуємося на постери
+  let shaderError = '';
+  renderer.debug.onShaderError = (gl, program, vs, fs) => {
+    shaderError = [gl.getProgramInfoLog(program), gl.getShaderInfoLog(vs), gl.getShaderInfoLog(fs)].filter(Boolean).join('\n').slice(0, 600) || 'невідома помилка';
+    console.error('Емаль: шейдер не скомпілювався на цій відеокарті →', gpu, '\n', shaderError);
+  };
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   let dpr = Math.min(window.devicePixelRatio || 1, Q.dpr);
   renderer.setPixelRatio(dpr);
@@ -533,11 +555,18 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
   resize();
   new ResizeObserver(resize).observe(canvas);
 
-  /* Компіляція шейдерів заздалегідь, щоб перший кадр не смикався */
+  /* Компіляція шейдерів заздалегідь, щоб перший кадр не смикався.
+     compileAsync не блокує сторінку: на Windows (Direct3D) компіляція помітно довша, ніж на Mac. */
   onProgress(0.9, 'Готуємо крісло');
   cards.forEach((c) => { c.visible = true; });
-  renderer.compile(scene, camera);
+  if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) {
+    await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 20000))]);
+  } else {
+    renderer.compile(scene, camera);
+  }
+  render(); // пробний кадр: тут three.js перевіряє програми (і компілює bloom)
   cards.forEach((c) => { c.visible = false; });
+  if (shaderError) throw new Error('шейдер не скомпілювався: ' + shaderError.split('\n')[0]);
   onProgress(1, 'Готово');
 
   /* ---------- Стан анімації ---------- */
@@ -703,6 +732,52 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     if (n > 4000) geo.setDrawRange(0, Math.floor(n * 0.7));
   }
 
+  /* Страховка від «чорного екрана»: фон-туманність ніколи не буває чистим #000,
+     тож якщо після рендеру більшість пікселів чорні — шейдери на цій відеокарті рахують NaN
+     або не малюють. Тоді вимикаємо 3D і показуємо постери. Перевіряємо двічі на старті. */
+  let failed = false;
+  let frameNo = 0;
+  let probe = null;
+  // Читаємо три рядки пікселів асинхронно (буфер + fence), щоб не зупиняти відеокарту
+  function startProbe() {
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    renderer.setRenderTarget(null);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buf);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, w * 4 * 3, gl.STREAM_READ);
+    [0.25, 0.5, 0.75].forEach((fy, i) => gl.readPixels(0, Math.floor(h * fy), w, 1, gl.RGBA, gl.UNSIGNED_BYTE, i * w * 4));
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    probe = { buf, sync, w, tries: 0 };
+  }
+  function pollProbe() {
+    const gl = renderer.getContext();
+    const p = probe;
+    p.tries++;
+    if (gl.clientWaitSync(p.sync, 0, 0) === gl.TIMEOUT_EXPIRED && p.tries < 120) return null;
+    gl.deleteSync(p.sync);
+    const data = new Uint8Array(p.w * 4 * 3);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, p.buf);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, data);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteBuffer(p.buf);
+    probe = null;
+    let black = 0, total = 0;
+    for (let i = 0; i < data.length; i += 4 * 5) {
+      total++;
+      if (data[i] + data[i + 1] + data[i + 2] === 0) black++;
+    }
+    return total ? black / total : 0;
+  }
+  function fail(reason) {
+    if (failed) return;
+    failed = true;
+    setPaused(true);
+    onFail(reason);
+  }
+
   function frame(now) {
     if (paused) { running = false; return; }
     raf = requestAnimationFrame(frame);
@@ -713,10 +788,20 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
     update(dt);
     stats.jsMs = stats.jsMs * 0.95 + (performance.now() - t0) * 0.05;
     render();
+    frameNo++;
+    if ((frameNo === 30 || frameNo === 240) && !probe) startProbe();
+    else if (probe) {
+      const share = pollProbe();
+      if (share !== null) {
+        stats.black = +share.toFixed(3);
+        if (share > 0.3 || params.has('failtest')) { fail(`чорний кадр (${Math.round(share * 100)}% пікселів)`); return; }
+      }
+    }
     adapt(real);
   }
 
-  const stats = { fps: 0, tier, particles: Q.count, jsMs: 0 };
+  const params = new URLSearchParams(location.search);
+  const stats = { fps: 0, tier, particles: Q.count, jsMs: 0, gpu, black: null };
 
   function start() {
     if (running) return;
@@ -733,9 +818,7 @@ export async function createStage({ canvas, tier = 'desktop', state, videos = {}
 
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
-    setPaused(true);
-    document.documentElement.classList.remove('is-ready');
-    document.documentElement.classList.add('is-static');
+    fail('втрачено WebGL-контекст (драйвер відеокарти скинув його)');
   });
 
   return {

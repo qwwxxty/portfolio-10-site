@@ -38,12 +38,18 @@
       var d = document.documentElement, q = location.search;
       d.classList.remove('no-js'); d.classList.add('js');
       var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // Людина сама увімкнула анімацію кнопкою на сайті (див. script.js, розділ 9)
+      var optIn = /[?&]motion\b/.test(q);
+      try { optIn = optIn || localStorage.getItem('emal-motion') === 'on'; } catch (e) {}
       var gl = false;
       try {
         var c = document.createElement('canvas');
-        gl = !!(window.WebGL2RenderingContext && c.getContext('webgl2')); // Three.js r180 потребує WebGL2
+        var ctx = window.WebGL2RenderingContext && c.getContext('webgl2'); // Three.js r180 потребує WebGL2
+        gl = !!ctx;
+        if (ctx && ctx.getExtension('WEBGL_lose_context')) ctx.getExtension('WEBGL_lose_context').loseContext();
       } catch (e) { gl = false; }
-      if (reduce || !gl || /[?&]static\b/.test(q)) d.classList.add('is-static');
+      var why = /[?&]static\b/.test(q) ? 'param' : !gl ? 'no-webgl2' : (reduce && !optIn) ? 'reduced-motion' : '';
+      if (why) { d.classList.add('is-static'); d.setAttribute('data-why', why); }
       else d.classList.add('is-loading');
     })();
   </script>
@@ -195,6 +201,11 @@
           </a>
         </div>
         <p class="intro__note" data-reveal>Перший огляд з планом лікування — <strong>350 ₴</strong> · <a href="#tsiny">усі ціни</a></p>
+        <!-- Показується, лише якщо в системі ввімкнено «менше руху» (на Windows — вимкнені «Ефекти анімації») -->
+        <p class="motion-note" id="motion-note" hidden>
+          <span>Анімацію вимкнено, бо в налаштуваннях вашої системи ввімкнено «менше руху».</span>
+          <button type="button" class="motion-note__btn" id="motion-on">Увімкнути 3D-анімацію</button>
+        </p>
       </div>
       <p class="scroll-cue" aria-hidden="true"><span></span>Гортайте</p>
     </section>
@@ -569,7 +580,7 @@
         <a href="tel:+380500000000">050 000 00 00</a>
         <a href="https://t.me/emal_sumy_demo" target="_blank" rel="noopener">Telegram</a>
         <a href="https://www.instagram.com/emal.sumy.demo/" target="_blank" rel="noopener">Instagram</a>
-        <a href="?static">Статична версія</a>
+        <a href="?static" id="motion-off">Статична версія без анімації</a>
       </p>
     </div>
   </footer>
