@@ -532,6 +532,8 @@ main:focus { outline: none; }
   pointer-events: none;
 }
 .crown__copy { z-index: 1; display: grid; gap: var(--s3); }
+/* на телефоні плашка пропливає над липкою рамкою сканера — робимо її щільнішою, щоб показник не просвічував */
+@media (max-width: 1023px) { .crown__copy { background: rgb(17 38 46 / .96); } }
 /* у статичній версії постер сцени 4 стоїть прямо в рамці сканера */
 .poster--4 { display: none; }
 html:not(.is-ready) .crown__slot {
